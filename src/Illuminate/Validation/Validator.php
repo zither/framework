@@ -1552,6 +1552,46 @@ class Validator implements ValidatorContract
     }
 
     /**
+     * Validate the dimensions of an image matches the given values.
+     *
+     * @param  string $attribute
+     * @param  mixed $value
+     * @param  array $parameters
+     * @return bool
+     */
+    protected function validateDimensions($attribute, $value, $parameters)
+    {
+        if (! $sizeDetails = getimagesize($value->getRealPath())) {
+            return false;
+        }
+
+        $this->requireParameterCount(1, $parameters, 'dimensions');
+
+        list($width, $height) = $sizeDetails;
+
+        $parameters = $this->parseNamedParameters($parameters);
+
+        if (
+            isset($parameters['width']) && $parameters['width'] != $width ||
+            isset($parameters['min_width']) && $parameters['min_width'] > $width ||
+            isset($parameters['max_width']) && $parameters['max_width'] < $width ||
+            isset($parameters['height']) && $parameters['height'] != $height ||
+            isset($parameters['min_height']) && $parameters['min_height'] > $height ||
+            isset($parameters['max_height']) && $parameters['max_height'] < $height
+        ) {
+            return false;
+        }
+
+        if (isset($parameters['ratio'])) {
+            list($numerator, $denominator) = array_pad(sscanf($parameters['ratio'], '%d/%d'), 2, 1);
+
+            return $numerator / $denominator == $width / $height;
+        }
+
+        return true;
+    }
+
+    /**
      * Validate the guessed extension of a file upload is in a set of file extensions.
      *
      * @param  string  $attribute
@@ -2573,6 +2613,23 @@ class Validator implements ValidatorContract
     }
 
     /**
+     * Parse named parameters to $key => $value items.
+     *
+     * @param  array  $parameters
+     * @return array
+     */
+    protected function parseNamedParameters($parameters)
+    {
+        return array_reduce($parameters, function ($result, $item) {
+            list($key, $value) = array_pad(explode('=', $item, 2), 2, null);
+
+            $result[$key] = $value;
+
+            return $result;
+        });
+    }
+
+    /**
      * Normalizes a rule so that we can accept short types.
      *
      * @param  string  $rule
@@ -3114,7 +3171,11 @@ class Validator implements ValidatorContract
      */
     protected function callClassBasedExtension($callback, $parameters)
     {
-        list($class, $method) = explode('@', $callback);
+        if (Str::contains($callback, '@')) {
+            list($class, $method) = explode('@', $callback);
+        } else {
+            list($class, $method) = [$callback, 'validate'];
+        }
 
         return call_user_func_array([$this->container->make($class), $method], $parameters);
     }
